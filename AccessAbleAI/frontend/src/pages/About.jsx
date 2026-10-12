@@ -18,7 +18,7 @@ export default function About() {
       <header style={{ marginBottom: '1.5rem' }}>
         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <Info className="text-primary" size={28} aria-hidden="true" />
-          <span>About AccessAble AI & Safety Protocols</span>
+          <span>About BREAKING BARIERS & Safety Protocols</span>
         </h1>
         <p className="page-subtitle">
           Architecture, accessibility design principles, local privacy safeguards, and transparent technical limitations.
@@ -34,7 +34,7 @@ export default function About() {
             <span>Unified Platform Architecture</span>
           </h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-            AccessAble AI brings together five assistive disciplines under a unified, accessible React and Python environment:
+            BREAKING BARIERS brings together assistive disciplines under a unified, accessible React and Python environment:
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
@@ -71,7 +71,7 @@ export default function About() {
             <div style={{ padding: '1rem', backgroundColor: 'var(--bg-surface-hover)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
                 <Video size={20} className="text-primary" />
-                <h3 style={{ fontSize: '1.05rem', margin: 0 }}>SignBridge AI</h3>
+                <h3 style={{ fontSize: '1.05rem', margin: 0 }}>SignBridge</h3>
               </div>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', margin: 0 }}>
                 Real-time hand sign recognition and intelligent sentence synthesis for accessible, fluid communication.
@@ -91,7 +91,7 @@ export default function About() {
             <div style={{ padding: '1rem', backgroundColor: 'var(--bg-surface-hover)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
                 <Bot size={20} className="text-primary" />
-                <h3 style={{ fontSize: '1.05rem', margin: 0 }}>AI Assistant Copilot</h3>
+                <h3 style={{ fontSize: '1.05rem', margin: 0 }}>Assistant Copilot</h3>
               </div>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', margin: 0 }}>
                 Intelligent conversational assistant with platform navigation shortcuts, voice interaction, and accessibility guidance.
@@ -100,14 +100,14 @@ export default function About() {
           </div>
         </div>
 
-        {/* Core AI & Recognition Capabilities */}
+        {/* Core Recognition Capabilities */}
         <div className="card">
           <h2 style={{ fontSize: '1.35rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Cpu size={20} className="text-primary" />
-            <span>Core AI & Recognition Capabilities</span>
+            <span>Core Recognition Capabilities</span>
           </h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            AccessAble AI integrates purpose-built computer vision and machine learning pipelines designed for responsiveness and accessibility:
+            BREAKING BARIERS integrates purpose-built computer vision and machine learning pipelines designed for responsiveness and accessibility:
           </p>
           <ul style={{ paddingLeft: '1.25rem', color: 'var(--text-secondary)', lineHeight: '1.8' }}>
             <li><strong>SignBridge Vision:</strong> High-speed neural hand-sign recognition optimized for real-time video feeds with scale invariance.</li>
@@ -124,7 +124,7 @@ export default function About() {
             <span>Privacy & Data Trust Principles</span>
           </h2>
           <ul style={{ paddingLeft: '1.25rem', color: 'var(--text-secondary)', lineHeight: '1.8' }}>
-            <li><strong>Zero Mandatory Cloud AI Keys:</strong> All core assistive workflows run free and local using browser capabilities and local Python services.</li>
+            <li><strong>Zero Mandatory Cloud Keys:</strong> All core assistive workflows run free and local using browser capabilities and local Python services.</li>
             <li><strong>No Frame Storage:</strong> Camera frames captured for OCR or ISL prediction are evaluated strictly in memory and never written to disk.</li>
             <li><strong>Explicit Geolocation Consent:</strong> GPS coordinates are queried only after an intentional user click.</li>
             <li><strong>Honest Status Claims:</strong> Reports are marked strictly as <code>DEMO DATA</code>, <code>USER REPORTED / UNVERIFIED</code>, or <code>VERIFIED</code>. We do not falsify emergency dispatch or wheelchair safety certifications.</li>

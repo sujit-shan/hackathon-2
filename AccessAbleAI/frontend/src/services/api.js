@@ -8,7 +8,7 @@ export async function fetchHealth() {
   } catch (err) {
     return {
       status: 'offline',
-      service: 'AccessAble AI Unified Backend',
+      service: 'BREAKING BARIERS Unified Backend',
       database: 'disconnected',
       reports_count: 0,
       active_barriers_count: 0,
@@ -112,11 +112,19 @@ export async function checkSignBridgeStatus() {
   }
 }
 
-export async function predictSign(imageData) {
+export async function predictSign(input) {
+  let bodyPayload = {};
+  if (typeof input === 'string') {
+    bodyPayload = { image_data: input };
+  } else if (Array.isArray(input)) {
+    bodyPayload = { landmarks: input };
+  } else if (typeof input === 'object' && input !== null) {
+    bodyPayload = input;
+  }
   const res = await fetch(`${API_BASE}/signbridge/predict`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image_data: imageData })
+    body: JSON.stringify(bodyPayload)
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
@@ -133,9 +141,30 @@ export async function translateSignTokens(tokens) {
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || 'AI translation failed');
+    throw new Error(errData.detail || 'Translation failed');
   }
   return await res.json();
+}
+
+export async function launchDesktopSignTranslator() {
+  const res = await fetch(`${API_BASE}/signbridge/launch-desktop`, {
+    method: 'POST'
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || 'Failed to launch desktop translator');
+  }
+  return await res.json();
+}
+
+export async function checkDesktopSignTranslatorStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/signbridge/desktop-status`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return { available: false, error: err.message };
+  }
 }
 
 export async function translateTextToSign(text, signLanguage = 'ASL') {
@@ -185,7 +214,7 @@ export async function sendAIChat(messages, context = {}) {
   });
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.detail || 'AI Assistant request failed');
+    throw new Error(errData.detail || 'Assistant request failed');
   }
   return await res.json();
 }

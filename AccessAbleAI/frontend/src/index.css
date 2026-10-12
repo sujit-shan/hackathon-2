@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --font-scale: 1rem;
   
   /* User-Specified Accessible Color Palette */
@@ -482,7 +482,7 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--shadow-xl);
 }
 
-/* Floating AI Assistant FAB */
+/* Floating Assistant FAB */
 .ai-fab {
   position: fixed;
   bottom: 2rem;

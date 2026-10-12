@@ -38,11 +38,11 @@ async def health_check():
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY")
     ai_configured = bool((gemini_key and len(gemini_key) > 10) or (openai_key and len(openai_key) > 10))
-    ai_provider = "AccessAble Neural Co-Pilot" if ai_configured else "Contextual Platform Co-pilot"
+    ai_provider = "BREAKING BARIERS Neural Co-Pilot" if ai_configured else "Contextual Platform Co-pilot"
 
     return {
         "status": "healthy",
-        "service": "AccessAble AI Unified Backend",
+        "service": "BREAKING BARIERS Unified Backend",
         "database": "sqlite_connected",
         "reports_count": reports_cnt,
         "active_barriers_count": active_barriers_cnt,

@@ -25,7 +25,7 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
       <header className="page-header">
         <h1 className="page-title">
           <Globe className="text-primary" size={40} aria-hidden="true" />
-          AccessAble AI — Inclusive Accessibility Platform
+          BREAKING BARIERS — Inclusive Accessibility Platform
         </h1>
         <p className="page-subtitle">
           A unified digital accessibility suite supporting visual assistance, community barrier reporting, spoken navigation, real-time deaf captions, emergency preparation, and Indian Sign Language translation.
@@ -64,7 +64,7 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
               <strong style={{ color: 'var(--danger)' }}>{health?.active_barriers_count ?? 0}</strong>
             </span>
             <span>
-              <strong>AI Assistant: </strong>
+              <strong>Assistant: </strong>
               <span className="badge badge-online" style={{ backgroundColor: '#E0F2FE', color: '#0369A1', borderColor: '#BAE6FD' }}>
                 <Sparkles size={12} aria-hidden="true" /> Online
               </span>
@@ -108,14 +108,14 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
       {/* 6 Core Accessibility Modules Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
         
-        {/* Module 0: GazeBridge AI */}
+        {/* Module 0: GazeBridge */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', borderTop: '5px solid #4F46E5', backgroundColor: 'rgba(79, 70, 229, 0.03)' }}>
           <div>
             <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: '#EDE9FE', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
               <Eye size={28} aria-hidden="true" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>GazeBridge AI</h2>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>GazeBridge</h2>
               <span className="badge badge-online" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>Hands-Free</span>
             </div>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem', fontSize: '0.95rem' }}>
@@ -128,7 +128,7 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
             </ul>
           </div>
           <button className="btn btn-primary" onClick={() => navigateTo('gazebridge')}>
-            Launch GazeBridge AI <ArrowRight size={16} aria-hidden="true" />
+            Launch GazeBridge <ArrowRight size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -195,30 +195,34 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
           </button>
         </div>
 
-        {/* Module 4: SignBridge AI */}
+        {/* Module 4: Hand Sign Translation System (SignBridge) */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', borderTop: '5px solid #1E3A8A' }}>
           <div>
             <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: '#E0E7FF', color: '#1E3A8A', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
               <Camera size={28} aria-hidden="true" />
             </div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '0.5rem' }}>SignBridge AI</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>Hand Sign Translator</h2>
+              <span className="badge badge-online" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}>Real-Time Vision</span>
+            </div>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem', fontSize: '0.95rem' }}>
-              Indian Sign Language word recognition. Recognizes hand sign vocabulary with real-time video tracking and speech output.
+              Real-time computer vision hand sign detection and translation. 3D hand skeleton tracking, jitter hysteresis, silence auto-translation, and Qwen/Gemini speech synthesis.
             </p>
             <ul style={{ paddingLeft: '1.25rem', color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: '1.7' }}>
-              <li>Webcam alignment guide box with confidence</li>
-              <li>Word-level staging with undo & clear</li>
-              <li>Rule-based sentence structuring & TTS</li>
+              <li>21-landmark 3D hand skeleton HUD with neon bone overlay</li>
+              <li>Low-latency Random Forest + Kinematics (&lt;5ms target)</li>
+              <li>Hysteresis consensus debouncer & silence auto-translate trigger</li>
+              <li>1-click Native OpenCV Desktop App launcher (30+ FPS)</li>
             </ul>
           </div>
           <button className="btn btn-primary" onClick={() => navigateTo('signbridge')}>
-            Launch SignBridge AI <ArrowRight size={16} aria-hidden="true" />
+            Launch Hand Sign Translator <ArrowRight size={16} aria-hidden="true" />
           </button>
         </div>
 
       </div>
 
-      {/* AI Assistant Banner */}
+      {/* Assistant Banner */}
       <div 
         className="card" 
         style={{ 
@@ -238,7 +242,7 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
             <span>ACCESSIBILITY CO-PILOT</span>
           </div>
           <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '0.5rem', color: '#FFFFFF' }}>
-            Need Guidance? Ask AccessAble AI Assistant
+            Need Guidance? Ask BREAKING BARIERS Assistant
           </h2>
           <p style={{ color: '#CBD5E1', fontSize: '1.05rem', margin: 0 }}>
             Have a question about reporting an obstacle, extracting text from an image, or navigating to your destination? The assistant operates the platform and answers questions with real data.
@@ -249,7 +253,7 @@ export default function Dashboard({ navigateTo, onOpenAI }) {
           style={{ backgroundColor: '#FACC15', color: '#000000', fontWeight: 800, minHeight: '52px', padding: '0.85rem 1.8rem', fontSize: '1.05rem' }}
           onClick={onOpenAI}
         >
-          <Bot size={22} aria-hidden="true" /> Ask AccessAble Assistant
+          <Bot size={22} aria-hidden="true" /> Ask Assistant
         </button>
       </div>
     </div>

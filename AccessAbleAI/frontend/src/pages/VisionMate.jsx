@@ -1,6 +1,6 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Tesseract from 'tesseract.js';
-import { Eye, Upload, Camera, Trash2, Volume2, Square, RotateCcw, Copy, Check, AlertCircle, Info, Sparkles } from 'lucide-react';
+import { Eye, Upload, Trash2, Volume2, Square, RotateCcw, Copy, Check, Info } from 'lucide-react';
 
 export default function VisionMate() {
   const [imageSrc, setImageSrc] = useState(null);
@@ -12,14 +12,8 @@ export default function VisionMate() {
   const [copied, setCopied] = useState(false);
   const [fontSize, setFontSize] = useState(1.15);
 
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-
   useEffect(() => {
     return () => {
-      stopCamera();
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -36,7 +30,6 @@ export default function VisionMate() {
     }
 
     setErrorMsg('');
-    stopCamera();
     const reader = new FileReader();
     reader.onload = () => {
       setImageSrc(reader.result);
@@ -46,70 +39,23 @@ export default function VisionMate() {
     reader.readAsDataURL(file);
   };
 
-  const startCamera = async () => {
-    setCameraError('');
-    setErrorMsg('');
-    setImageSrc(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCameraActive(true);
-      }
-    } catch (err) {
-      setCameraError('Camera access denied or unavailable. Please use the image upload option.');
-      setIsCameraActive(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraActive(false);
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const photoData = canvas.toDataURL('image/jpeg', 0.9);
-    setImageSrc(photoData);
-    stopCamera();
-    runOCR(photoData);
-  };
-
-  const runOCR = async (imgData) => {
+  const runOCR = async (imageSource) => {
     setIsProcessing(true);
     setProgress(0);
     setStatusText('Initializing OCR engine...');
     setErrorMsg('');
 
     try {
-      const result = await Tesseract.recognize(
-        imgData,
-        'eng',
-        {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              setProgress(Math.round((m.progress || 0) * 100));
-              setStatusText(`Recognizing text (${Math.round((m.progress || 0) * 100)}%)...`);
-            } else {
-              setStatusText(m.status || 'Processing image...');
-            }
-          }
-        }
-      );
+      const worker = await Tesseract.createWorker('eng');
+      
+      setStatusText('Processing image & analyzing text...');
+      const ret = await worker.recognize(imageSource);
+      await worker.terminate();
 
-      const extracted = result.data.text.trim();
+      const extracted = ret.data.text.trim();
       if (!extracted) {
-        setStatusText('Recognition complete. No readable text found in image.');
+        setErrorMsg('No readable text detected in this image. Please upload an image with clearer or larger text.');
+        setStatusText('Recognition complete (0 words found).');
       } else {
         setText(extracted);
         setStatusText('Recognition complete. Review text below.');
@@ -149,7 +95,6 @@ export default function VisionMate() {
 
   const clearAll = () => {
     stopSpeech();
-    stopCamera();
     setImageSrc(null);
     setText('');
     setProgress(0);
@@ -171,10 +116,10 @@ export default function VisionMate() {
 
       {/* Input controls card */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>1. Choose or Capture Image</h2>
+        <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>1. Choose Document Image</h2>
         
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
-          <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
+          <label className="btn btn-primary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <Upload size={18} aria-hidden="true" /> Upload Image File
             <input 
               type="file" 
@@ -185,49 +130,19 @@ export default function VisionMate() {
             />
           </label>
 
-          {!isCameraActive ? (
-            <button className="btn btn-outline" onClick={startCamera}>
-              <Camera size={18} aria-hidden="true" /> Use Camera
-            </button>
-          ) : (
-            <button className="btn btn-outline" onClick={stopCamera}>
-              <Square size={18} aria-hidden="true" /> Close Camera
-            </button>
-          )}
-
           {(imageSrc || text) && (
-            <button className="btn btn-outline" onClick={clearAll}>
+            <button className="btn btn-outline" onClick={clearAll} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Trash2 size={18} aria-hidden="true" /> Clear All
             </button>
           )}
         </div>
 
-        {cameraError && (
-          <div style={{ color: 'var(--danger)', marginTop: '0.5rem', fontWeight: 600 }}>{cameraError}</div>
-        )}
-
-        {isCameraActive && (
-          <div style={{ marginTop: '1rem', textAlign: 'center', backgroundColor: '#000', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              style={{ width: '100%', maxWidth: '480px', borderRadius: 'var(--radius-sm)', display: 'block', margin: '0 auto 1rem auto' }}
-            />
-            <button className="btn btn-primary btn-large" onClick={capturePhoto}>
-              <Camera size={20} aria-hidden="true" /> Take Photo & Extract Text
-            </button>
-          </div>
-        )}
-
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-        {imageSrc && !isCameraActive && (
+        {imageSrc && (
           <div style={{ marginTop: '1rem', display: 'flex', gap: '1.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <img 
               src={imageSrc} 
               alt="Selected document for OCR extraction" 
-              style={{ maxHeight: '220px', maxWidth: '100%', objectFit: 'contain', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}
+              style={{ maxHeight: '240px', maxWidth: '100%', objectFit: 'contain', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}
             />
             {isProcessing && (
               <div style={{ flex: 1, minWidth: '220px' }}>

@@ -26,11 +26,25 @@ import AIAssistant from './components/AIAssistant';
 import EyeWebsiteController from './components/EyeWebsiteController';
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const getInitialPage = () => {
+    const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    const target = path || hash;
+    if (['signbridge', 'gazebridge', 'visionmate', 'accessroute', 'safereach', 'livecaptions', 'settings', 'about'].includes(target)) {
+      return target;
+    }
+    return 'dashboard';
+  };
+
+  const [currentPage, setCurrentPage] = useState(getInitialPage);
   const [theme, setTheme] = useState(() => localStorage.getItem('accessable_theme') || 'default');
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('accessable_font_scale') || '1rem');
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [isEyeControlActive, setIsEyeControlActive] = useState(false);
+
+  useEffect(() => {
+    window.history.replaceState(null, '', `/${currentPage === 'dashboard' ? '' : currentPage}`);
+  }, [currentPage]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -39,8 +53,8 @@ export default function App() {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'gazebridge', label: 'GazeBridge AI (Eye Typing)', icon: Eye },
-    { id: 'signbridge', label: 'SignBridge AI', icon: Video },
+    { id: 'gazebridge', label: 'GazeBridge (Eye Typing)', icon: Eye },
+    { id: 'signbridge', label: 'Hand Sign Translator', icon: Video },
     { id: 'visionmate', label: 'VisionMate', icon: Sparkles },
     { id: 'accessroute', label: 'AccessRoute', icon: MapPin },
     { id: 'safereach', label: 'SafeReach SOS', icon: ShieldAlert },
@@ -78,12 +92,12 @@ export default function App() {
           href="#dashboard" 
           className="brand"
           onClick={(e) => { e.preventDefault(); setCurrentPage('dashboard'); }}
-          aria-label="AccessAble AI Home Dashboard"
+          aria-label="BREAKING BARIERS Home Dashboard"
         >
           <div className="brand-logo" aria-hidden="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Sparkles size={20} />
           </div>
-          <span className="brand-name">AccessAble AI</span>
+          <span className="brand-name">BREAKING BARIERS</span>
         </a>
 
         <nav className="nav-links" role="navigation" aria-label="Main Navigation">
@@ -144,10 +158,10 @@ export default function App() {
             className="btn btn-primary"
             style={{ minHeight: '38px', padding: '0.35rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             onClick={() => setIsAIOpen(true)}
-            aria-label="Open AI Assistant"
+            aria-label="Open Assistant"
           >
             <Bot size={16} aria-hidden="true" />
-            <span>AI Copilot</span>
+            <span>Copilot</span>
           </button>
         </div>
       </header>
@@ -172,18 +186,18 @@ export default function App() {
         {currentPage === 'about' && <About />}
       </main>
 
-      {/* Persistent Floating AI Assistant Launcher Button */}
+      {/* Persistent Floating Assistant Launcher Button */}
       <button 
         className="ai-fab" 
         onClick={() => setIsAIOpen(prev => !prev)}
-        aria-label="Open AccessAble AI Assistant"
-        title="Ask AccessAble AI Assistant"
+        aria-label="Open Assistant"
+        title="Ask Assistant"
       >
         <Bot size={22} aria-hidden="true" />
-        <span>Ask AccessAble</span>
+        <span>Ask Assistant</span>
       </button>
 
-      {/* Conversational AI Assistant Modal / Drawer */}
+      {/* Conversational Assistant Modal / Drawer */}
       <AIAssistant 
         isOpen={isAIOpen} 
         onClose={() => setIsAIOpen(false)} 
@@ -203,7 +217,7 @@ export default function App() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid var(--border-color)', padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 'auto' }} role="contentinfo">
         <p>
-          <strong>AccessAble AI</strong> &mdash; Inclusive Digital Accessibility Platform | Built for Hackathon MVP
+          <strong>BREAKING BARIERS</strong> &mdash; Inclusive Digital Accessibility Platform | Built for Hackathon MVP
         </p>
         <p style={{ marginTop: '0.25rem' }}>
           Open-Source & Local-First &bull; No Mandatory Cloud Keys &bull; Privacy Preserved

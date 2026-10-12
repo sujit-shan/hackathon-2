@@ -539,7 +539,7 @@ export default function GazeBridge() {
       <header className="page-header" style={{ marginBottom: '1.25rem' }}>
         <h1 className="page-title">
           <Eye className="text-primary" size={36} aria-hidden="true" />
-          GazeBridge AI — Pure Eye Gaze & Blink Communicator
+          GazeBridge — Pure Eye Gaze & Blink Communicator
         </h1>
         <p className="page-subtitle">
           Operate entirely with <strong>EYE MOVEMENT</strong>: look left, right, up, down to move cursor, and <strong>BLINK</strong> or <strong>DWELL (1.4s)</strong> to select and speak.

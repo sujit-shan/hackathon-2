@@ -57,7 +57,15 @@ CONSENSUS_THRESHOLD = 0.75   # FR-05: 75% consensus required
 COOLDOWN_FRAMES = 25         # FR-05: 25-frame duplicate cooldown
 SILENCE_TRIGGER_FRAMES = 90  # FR-06: ~3 seconds of no hand to trigger translation
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(current_dir, ".env"), override=True)
+    load_dotenv(os.path.join(current_dir, "AccessAbleAI", ".env"), override=True)
+except Exception:
+    pass
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash").strip()
 QWEN_API_URL = "http://localhost:11434/api/generate"
 QWEN_MODEL_NAME = "qwen2.5:1.5b"
 
@@ -149,21 +157,30 @@ class SignTranslatorApp:
         }
 
         translated_text = ""
-        # 1. High-Speed Gemini 3.1 Flash Lite API (<200ms)
-        if GEMINI_API_KEY:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={GEMINI_API_KEY.strip()}"
-                prompt_text = f"{SYSTEM_PROMPT}\nSign tokens: {token_str}\nTranslated sentence:"
-                g_payload = {
-                    "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
-                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 100}
-                }
-                res = requests.post(url, json=g_payload, timeout=3.0)
-                if res.status_code == 200:
-                    data = res.json()
-                    translated_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except Exception:
-                pass
+        # 1. High-Speed Gemini API (<200ms)
+        active_key = os.environ.get("GEMINI_API_KEY", GEMINI_API_KEY).strip()
+        if active_key:
+            prompt_text = f"{SYSTEM_PROMPT}\nSign tokens: {token_str}\nTranslated sentence:"
+            g_payload = {
+                "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 100}
+            }
+            pref_m = os.environ.get("GEMINI_MODEL", GEMINI_MODEL).strip()
+            models_to_test = [m for m in [pref_m, "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"] if m]
+            seen_m = set()
+            for m_name in models_to_test:
+                if m_name in seen_m: continue
+                seen_m.add(m_name)
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent?key={active_key}"
+                    res = requests.post(url, json=g_payload, timeout=2.5)
+                    if res.status_code == 200:
+                        data = res.json()
+                        translated_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        if translated_text:
+                            break
+                except Exception:
+                    continue
 
         # 2. Local Qwen fallback
         if not translated_text:
@@ -409,17 +426,40 @@ class SignTranslatorApp:
         print("  Controls: [T] Force Translate | [C] Clear | [Q] Quit")
         print("=======================================================\n")
 
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("[Error] Failed to open webcam index 0. Checking fallback index 1...")
-            cap = cv2.VideoCapture(1)
-            if not cap.isOpened():
-                print("[Critical Error] No accessible webcam found.")
-                return
+        cap = None
+        # Try DirectShow first on Windows (fastest & lowest latency), then default backend
+        backend_list = [cv2.CAP_DSHOW, cv2.CAP_ANY] if os.name == 'nt' else [cv2.CAP_ANY]
+        
+        for backend in backend_list:
+            b_name = "DirectShow" if backend == cv2.CAP_DSHOW else "Default"
+            for idx in [0, 1, 2]:
+                try:
+                    test_cap = cv2.VideoCapture(idx, backend)
+                    if test_cap.isOpened():
+                        # Verify we can actually read valid frames
+                        ret, test_frame = test_cap.read()
+                        if ret and test_frame is not None and test_frame.size > 0:
+                            print(f"[Webcam] Connected to camera index {idx} using {b_name} ({test_frame.shape[1]}x{test_frame.shape[0]})")
+                            cap = test_cap
+                            break
+                        test_cap.release()
+                except Exception:
+                    pass
+            if cap is not None:
+                break
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+        if cap is None:
+            print("[Critical Error] No accessible webcam found.")
+            print("[Tip] If your browser or another app (Zoom, Teams) is currently using the camera, please stop it first.")
+            return
+
+        # Attempt to set comfortable resolution if supported
+        try:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+        except Exception:
+            pass
 
         prev_time = time.time()
         fps_buffer = deque(maxlen=30)

@@ -41,6 +41,7 @@ GESTURE_MAP = {
 }
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 QWEN_API_URL = "http://localhost:11434/api/generate"
 QWEN_MODEL_NAME = "qwen2.5:1.5b"
 
@@ -105,7 +106,8 @@ def get_engine():
     return _clf, _class_names, _gesture_recognizer, _hand_landmarker
 
 class PredictRequest(BaseModel):
-    image_data: str
+    image_data: Optional[str] = None
+    landmarks: Optional[List[dict]] = None
 
 class TranslateRequest(BaseModel):
     tokens: List[str]
@@ -129,7 +131,7 @@ def signbridge_status():
 @router.post("/predict")
 def signbridge_predict(payload: PredictRequest):
     clf, classes, gest_rec, hand_lm = get_engine()
-    if gest_rec is None and hand_lm is None:
+    if gest_rec is None and hand_lm is None and clf is None:
         raise HTTPException(
             status_code=503,
             detail="SignBridge ML Engine is initializing or model files are missing."
@@ -137,6 +139,54 @@ def signbridge_predict(payload: PredictRequest):
 
     try:
         t0 = time.perf_counter()
+
+        # DIRECT LANDMARKS PIPELINE (Virtual Hand / Direct Kinematics Simulation)
+        if payload.landmarks and len(payload.landmarks) >= 21:
+            class DummyLM:
+                def __init__(self, d):
+                    self.x = float(d.get("x", 0.0))
+                    self.y = float(d.get("y", 0.0))
+                    self.z = float(d.get("z", 0.0))
+            lm_objs = [DummyLM(lm) for lm in payload.landmarks]
+            kin_sign, kin_conf = classify_kinematics(lm_objs)
+            predicted_sign = kin_sign
+            confidence_val = kin_conf
+            tier_used = "kinematics" if kin_sign else None
+
+            if not predicted_sign and clf is not None and classes:
+                features = extract_features(lm_objs)
+                if features and len(features) == 60:
+                    probs = clf.predict_proba([features])[0]
+                    best_idx = int(np.argmax(probs))
+                    rf_conf = float(probs[best_idx])
+                    if rf_conf >= 0.70:
+                        predicted_sign = classes[best_idx]
+                        confidence_val = round(rf_conf, 3)
+                        tier_used = "random_forest"
+
+            infer_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            return {
+                "prediction": predicted_sign,
+                "confidence": confidence_val,
+                "latency_ms": infer_latency_ms,
+                "mode": "hybrid_kinematic_vision",
+                "tier": tier_used,
+                "has_hand": True,
+                "landmarks": payload.landmarks
+            }
+
+        if not payload.image_data:
+            return {
+                "prediction": None,
+                "confidence": 0.0,
+                "message": "No image or landmarks provided",
+                "latency_ms": 0.0,
+                "mode": "hybrid_kinematic_vision",
+                "tier": None,
+                "has_hand": False,
+                "landmarks": []
+            }
+
         data_str = payload.image_data
         if "," in data_str:
             data_str = data_str.split(",")[1]
@@ -148,6 +198,8 @@ def signbridge_predict(payload: PredictRequest):
 
         predicted_sign = None
         confidence_val = 0.0
+        kin_sign = None
+        kin_conf = 0.0
 
         # TIER 1: Google Pretrained Gesture Recognizer
         landmarks = None
@@ -177,7 +229,7 @@ def signbridge_predict(payload: PredictRequest):
             
             if kin_sign:
                 # Prioritize high-accuracy kinematics for vocabulary signs
-                if predicted_sign is None or kin_conf > confidence_val or kin_sign in ("WATER", "NO", "I", "THANK YOU", "WANT", "PLEASE", "HELP"):
+                if predicted_sign is None or kin_conf > confidence_val or kin_sign in ("WATER", "NO", "I", "THANK YOU", "WANT", "PLEASE", "HELP", "FOOD", "EMERGENCY"):
                     predicted_sign = kin_sign
                     confidence_val = round(kin_conf, 3)
 
@@ -195,24 +247,108 @@ def signbridge_predict(payload: PredictRequest):
 
         infer_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
 
+        tier_used = None
+        if predicted_sign:
+            if kin_sign and predicted_sign == kin_sign:
+                tier_used = "kinematics"
+            elif clf and classes and predicted_sign in classes and (kin_sign is None):
+                tier_used = "random_forest"
+            else:
+                tier_used = "gesture_recognizer"
+
+        serialized_landmarks = []
+        if landmarks is not None:
+            for lm in landmarks:
+                serialized_landmarks.append({
+                    "x": float(round(getattr(lm, "x", 0.0), 4)),
+                    "y": float(round(getattr(lm, "y", 0.0), 4)),
+                    "z": float(round(getattr(lm, "z", 0.0), 4))
+                })
+
+        has_hand = len(serialized_landmarks) > 0
+
         if predicted_sign:
             return {
                 "prediction": predicted_sign,
                 "confidence": confidence_val,
                 "latency_ms": infer_latency_ms,
-                "mode": "hybrid_kinematic_vision"
+                "mode": "hybrid_kinematic_vision",
+                "tier": tier_used,
+                "has_hand": has_hand,
+                "landmarks": serialized_landmarks
             }
         else:
             return {
                 "prediction": None,
                 "confidence": 0.0,
-                "message": "Adjust hand within camera view",
+                "message": "Adjust hand within camera view" if not has_hand else "Hand detected, hold pose steady",
                 "latency_ms": infer_latency_ms,
-                "mode": "hybrid_kinematic_vision"
+                "mode": "hybrid_kinematic_vision",
+                "tier": None,
+                "has_hand": has_hand,
+                "landmarks": serialized_landmarks
             }
 
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"Inference error: {str(err)}")
+
+def get_translator_script_path():
+    """Finds realtime_sign_translator.py in workspace root or subdirectories."""
+    candidates = [
+        # 1. smart education workspace root (parent of AccessAbleAI)
+        os.path.abspath(os.path.join(BASE_DIR, "..", "..", "realtime_sign_translator.py")),
+        # 2. AccessAbleAI directory
+        os.path.abspath(os.path.join(BASE_DIR, "..", "realtime_sign_translator.py")),
+        # 3. backend directory
+        os.path.abspath(os.path.join(BASE_DIR, "realtime_sign_translator.py")),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+@router.post("/launch-desktop")
+def launch_desktop_translator():
+    """Launches the user's native realtime_sign_translator.py OpenCV desktop application."""
+    import sys
+    import subprocess
+
+    script_path = get_translator_script_path()
+    if not script_path:
+        raise HTTPException(
+            status_code=404,
+            detail="realtime_sign_translator.py not found in workspace."
+        )
+
+    python_exe = sys.executable
+    working_dir = os.path.dirname(script_path)
+
+    try:
+        flags = subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        proc = subprocess.Popen(
+            [python_exe, script_path],
+            cwd=working_dir,
+            creationflags=flags
+        )
+        return {
+            "status": "launched",
+            "pid": proc.pid,
+            "script": script_path,
+            "message": "Real-time OpenCV Hand Sign Translator launched in native window!"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to launch desktop app: {str(e)}")
+
+@router.get("/desktop-status")
+def desktop_translator_status():
+    """Checks if realtime_sign_translator.py exists and can be launched."""
+    script_path = get_translator_script_path()
+    exists = script_path is not None
+    return {
+        "available": exists,
+        "path": script_path,
+        "description": "Native OpenCV 30+ FPS Hand Sign Detection & Translation System"
+    }
 
 @router.post("/translate")
 async def signbridge_translate(payload: TranslateRequest):
@@ -251,35 +387,46 @@ async def signbridge_translate(payload: TranslateRequest):
     now_ts = time.time()
 
     # 1. High-Speed Gemini API (<200ms concise translation)
-    if GEMINI_API_KEY and len(GEMINI_API_KEY.strip()) > 10 and now_ts >= _gemini_unreachable_until:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY.strip()}"
-            prompt_text = (
-                "You are an expert non-verbal accessibility communication interpreter.\n"
-                f"Communication keywords: {token_str}\n"
-                "CRITICAL INSTRUCTION: Output a concise, fluent English sentence expressing this request.\n"
-                "STRICT NEGATIVE CONSTRAINT: NEVER repeat words, do not stutter, and never produce repetitive outputs like 'Yes, yes, yes'.\n"
-                "Output only the final concise sentence without quotation marks or conversational commentary."
-            )
-            gemini_payload = {
-                "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
-                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 60}
-            }
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                res = await client.post(url, json=gemini_payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    translated_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    return {
-                        "direct_words": direct_words,
-                        "translated_sentence": translated_text,
-                        "tokens": clean_tokens,
-                        "provider": "accessable_neural"
-                    }
-                else:
-                    _gemini_unreachable_until = now_ts + 60.0
-        except Exception:
-            _gemini_unreachable_until = now_ts + 60.0
+    active_gemini_key = os.environ.get("GEMINI_API_KEY", GEMINI_API_KEY).strip()
+    if active_gemini_key and len(active_gemini_key) > 10 and now_ts >= _gemini_unreachable_until:
+        prompt_text = (
+            "You are an expert non-verbal accessibility communication interpreter.\n"
+            f"Communication keywords: {token_str}\n"
+            "CRITICAL INSTRUCTION: Output a concise, fluent English sentence expressing this request.\n"
+            "STRICT NEGATIVE CONSTRAINT: NEVER repeat words, do not stutter, and never produce repetitive outputs like 'Yes, yes, yes'.\n"
+            "Output only the final concise sentence without quotation marks or conversational commentary."
+        )
+        gemini_payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt_text}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 60}
+        }
+        
+        # Test preferred model first, then high-availability fallbacks
+        pref_model = os.environ.get("GEMINI_MODEL", GEMINI_MODEL).strip()
+        model_candidates = [m for m in [pref_model, "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"] if m]
+        # Deduplicate while preserving order
+        seen = set()
+        unique_models = [m for m in model_candidates if not (m in seen or seen.add(m))]
+
+        for model_to_try in unique_models:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_try}:generateContent?key={active_gemini_key}"
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    res = await client.post(url, json=gemini_payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        translated_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        return {
+                            "direct_words": direct_words,
+                            "translated_sentence": translated_text,
+                            "tokens": clean_tokens,
+                            "provider": "accessable_neural"
+                        }
+            except Exception:
+                continue
+
+        # If all candidates failed:
+        _gemini_unreachable_until = now_ts + 30.0
 
     # 2. Local Qwen Fallback (if Ollama is active)
     if now_ts >= _qwen_unreachable_until:
@@ -337,10 +484,16 @@ async def signbridge_translate(payload: TranslateRequest):
         sentence = "Please help me take my medicine."
     elif "HELP" in tokens_upper and "FAMILY" in tokens_upper:
         sentence = "Please help me contact my family."
-    elif "YES" in tokens_upper and "PLEASE" in tokens_upper:
-        sentence = "Yes, please."
-    elif "NO" in tokens_upper and "THANK YOU" in tokens_upper:
-        sentence = "No, thank you."
+    elif "WATER" in tokens_upper and ("WANT" in tokens_upper or "I" in tokens_upper):
+        sentence = "I would like some water, please."
+    elif "FOOD" in tokens_upper and ("WANT" in tokens_upper or "I" in tokens_upper):
+        sentence = "I would like some food, please."
+    elif "HELLO" in tokens_upper and "THANK YOU" in tokens_upper:
+        sentence = "Hello! Thank you very much."
+    elif "I" in tokens_upper and "HELP" in tokens_upper:
+        sentence = "Please help me."
+    elif "I" in tokens_upper and "REST" in tokens_upper:
+        sentence = "I need to rest now, please."
     else:
         # Dynamic grammatical synthesizer for multi-token combinations
         is_emergency = "EMERGENCY" in tokens_upper

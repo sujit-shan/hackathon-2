@@ -18,7 +18,7 @@ export default function Settings({ theme, setTheme, fontScale, setFontScale }) {
   const handleTestSpeech = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('AccessAble AI speech settings verified successfully.');
+      const u = new SpeechSynthesisUtterance('BREAKING BARIERS speech settings verified successfully.');
       u.rate = parseFloat(speechRate);
       window.speechSynthesis.speak(u);
     }

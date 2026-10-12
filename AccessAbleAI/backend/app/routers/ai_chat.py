@@ -22,19 +22,18 @@ DEFAULT_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 async def call_gemini_api(api_key: str, messages: list, context: dict = None, model_name: str = DEFAULT_GEMINI_MODEL) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
     contents = []
     
     # System instruction context
     system_text = (
-        "You are AccessAble AI Assistant, an empathetic, expert accessibility specialist and platform co-pilot. "
+        "You are BREAKING BARIERS Assistant, an empathetic, expert accessibility specialist and platform co-pilot. "
         "You help people with visual, hearing, mobility, speech, and communication needs. "
-        "AccessAble AI features 5 flagship modules:\n"
+        "BREAKING BARIERS features flagship modules:\n"
         "1. VisionMate: High-speed OCR and text-to-speech for printed documents, medicine boxes, and signs.\n"
         "2. AccessRoute: Barrier reporting map with spoken step-by-step navigation for wheelchair and blind users.\n"
         "3. Live Captions: Real-time speech-to-text captions for deaf and hard-of-hearing users.\n"
         "4. SafeReach SOS: One-touch emergency alert preparation and trusted contact sharing.\n"
-        "5. SignBridge AI: Scale-invariant hand sign detection and local Qwen AI linguistic translation.\n\n"
+        "5. SignBridge: Scale-invariant hand sign detection and local Qwen linguistic translation.\n\n"
         "Always be concise, compassionate, supportive, and accessible. If the user asks how to use a feature or wants to navigate, guide them directly."
     )
     
@@ -48,18 +47,31 @@ async def call_gemini_api(api_key: str, messages: list, context: dict = None, mo
         "generationConfig": {"temperature": 0.35, "maxOutputTokens": 800}
     }
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        res = await client.post(url, json=payload)
-        if res.status_code == 200:
-            data = res.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        else:
-            raise Exception(f"Gemini API returned status {res.status_code}: {res.text}")
+    candidates = [model_name, "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]
+    seen = set()
+    unique_models = [m for m in candidates if m and not (m in seen or seen.add(m))]
+
+    last_err = None
+    for m_cand in unique_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_cand}:generateContent?key={api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                else:
+                    last_err = f"Gemini model {m_cand} returned status {res.status_code}: {res.text}"
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    raise Exception(f"Gemini API error across candidate models: {last_err}")
 
 async def call_openai_api(api_key: str, messages: list, context: dict = None) -> str:
     url = "https://api.openai.com/v1/chat/completions"
     formatted = [
-        {"role": "system", "content": "You are AccessAble AI Assistant, an accessibility assistant helping with VisionMate, AccessRoute, Live Captions, SafeReach, and SignBridge AI."}
+        {"role": "system", "content": "You are BREAKING BARIERS Assistant, an accessibility assistant helping with VisionMate, AccessRoute, Live Captions, SafeReach, and SignBridge."}
     ]
     for m in messages:
         formatted.append({"role": m.role, "content": m.content})
@@ -152,17 +164,17 @@ def platform_rule_based_assistant(user_text: str, context: dict = None) -> tuple
 
     elif re.search(r"\b(what can you do|features|overview|help|capabilities)\b", txt):
         reply = (
-            "**Welcome to AccessAble AI!** Here is what you can do on the platform:\n\n"
+            "**Welcome to BREAKING BARIERS!** Here is what you can do on the platform:\n\n"
             "1. **VisionMate** — Extract text from photos & signs and hear them read aloud.\n"
             "2. **AccessRoute** — Interactive accessible map, turn-by-turn navigation, and community barrier reports.\n"
             "3. **Live Captions** — Live speech-to-text captions for deaf and hard-of-hearing users.\n"
             "4. **SafeReach SOS** — Prepare emergency alerts with location consent and trusted contacts.\n"
-            "5. **SignBridge AI** — Recognize Indian Sign Language hand signs and translate them to speech.\n"
-            "6. **Ask AccessAble** — I can guide you, look up barriers, and navigate between tools!"
+            "5. **SignBridge** — Recognize Indian Sign Language hand signs and translate them to speech.\n"
+            "6. **Ask Assistant** — I can guide you, look up barriers, and navigate between tools!"
         )
     else:
         reply = (
-            "I am **AccessAble AI Assistant**. I can help you read documents aloud, navigate accessible routes, "
+            "I am **BREAKING BARIERS Assistant**. I can help you read documents aloud, navigate accessible routes, "
             "report community barriers, generate live speech captions, prepare emergency SOS alerts, or translate sign language.\n\n"
             "Try asking:\n"
             "- *'How do I report a barrier?'*\n"
@@ -195,7 +207,7 @@ async def chat_with_assistant(payload: AIChatRequest):
             reply = await call_gemini_api(gemini_key.strip(), payload.messages, payload.context, model_name=gemini_model)
             return AIChatResponse(
                 reply=reply, 
-                provider="accessable_ai",
+                provider="breaking_bariers",
                 tool_action=tool_action
             )
         except Exception as e:

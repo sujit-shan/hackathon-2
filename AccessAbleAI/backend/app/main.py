@@ -1,4 +1,17 @@
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+# Load .env from AccessAbleAI directory and root
+for env_candidate in [
+    Path(__file__).resolve().parent.parent.parent / ".env",
+    Path(__file__).resolve().parent.parent.parent.parent / ".env",
+    Path(".env")
+]:
+    if env_candidate.exists():
+        load_dotenv(dotenv_path=env_candidate, override=True)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
@@ -10,8 +23,8 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(
-    title="AccessAble AI API",
-    description="Unified API backend for AccessAble AI accessibility platform",
+    title="BREAKING BARIERS API",
+    description="Unified API backend for BREAKING BARIERS accessibility platform",
     version="1.1.0",
     lifespan=lifespan
 )
@@ -35,7 +48,7 @@ app.include_router(eyegaze.router)
 @app.get("/")
 def root():
     return {
-        "app": "AccessAble AI",
+        "app": "BREAKING BARIERS",
         "version": "1.1.0",
         "documentation": "/docs",
         "endpoints": [

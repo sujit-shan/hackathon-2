@@ -15,7 +15,7 @@ export default function AIAssistant({ isOpen, onClose, onNavigate, currentPage }
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Hello! I am your **AccessAble AI Assistant**. I can help you report obstacles, navigate accessible routes, extract text from signs, generate live captions, prepare emergency alerts, or translate Indian Sign Language.\n\nHow can I support your accessibility needs today?"
+      content: "Hello! I am your **BREAKING BARIERS Assistant**. I can help you report obstacles, navigate accessible routes, extract text from signs, generate live captions, prepare emergency alerts, or translate Indian Sign Language.\n\nHow can I support your accessibility needs today?"
     }
   ]);
   const [input, setInput] = useState('');
@@ -100,7 +100,7 @@ export default function AIAssistant({ isOpen, onClose, onNavigate, currentPage }
     } catch (err) {
       setMessages([...newMessages, {
         role: 'assistant',
-        content: "I encountered an error connecting to the AI backend. Please verify that the FastAPI backend is running on port 8000."
+        content: "I encountered an error connecting to the backend. Please verify that the FastAPI backend is running on port 8000."
       }]);
     } finally {
       setIsLoading(false);
@@ -154,7 +154,7 @@ export default function AIAssistant({ isOpen, onClose, onNavigate, currentPage }
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="AccessAble AI Assistant Window">
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="BREAKING BARIERS Assistant Window">
       <div 
         className="modal-card" 
         style={{ 
@@ -175,7 +175,7 @@ export default function AIAssistant({ isOpen, onClose, onNavigate, currentPage }
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>AccessAble AI Assistant</h2>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>BREAKING BARIERS Assistant</h2>
                 <span className="badge badge-online" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>
                   Online
                 </span>
@@ -356,7 +356,7 @@ export default function AIAssistant({ isOpen, onClose, onNavigate, currentPage }
               borderRadius: 'var(--radius-sm)',
               border: '2px solid var(--border-color)'
             }}
-            aria-label="Type message to AI assistant"
+            aria-label="Type message to assistant"
           />
 
           <button 
