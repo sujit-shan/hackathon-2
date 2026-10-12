@@ -23,12 +23,14 @@ import LiveCaptions from './pages/LiveCaptions';
 import Settings from './pages/Settings';
 import About from './pages/About';
 import AIAssistant from './components/AIAssistant';
+import EyeWebsiteController from './components/EyeWebsiteController';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [theme, setTheme] = useState(() => localStorage.getItem('accessable_theme') || 'default');
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('accessable_font_scale') || '1rem');
   const [isAIOpen, setIsAIOpen] = useState(false);
+  const [isEyeControlActive, setIsEyeControlActive] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -101,8 +103,33 @@ export default function App() {
           })}
         </nav>
 
-        {/* Quick Contrast Switcher & Copilot Button */}
+        {/* Quick Actions: Eye Control Toggle, Contrast Switcher, Copilot Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <button
+            className={`btn ${isEyeControlActive ? 'btn-primary' : 'btn-outline'}`}
+            style={{
+              minHeight: '38px',
+              padding: '0.35rem 0.85rem',
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              border: isEyeControlActive ? '2px solid #16A34A' : '1.5px solid var(--border-color)',
+              backgroundColor: isEyeControlActive ? 'rgba(22, 163, 74, 0.15)' : 'transparent',
+              color: isEyeControlActive ? '#16A34A' : 'var(--text-color)',
+              fontWeight: 700,
+              boxShadow: isEyeControlActive ? '0 0 12px rgba(22, 163, 74, 0.35)' : 'none',
+              transition: 'all 0.2s ease'
+            }}
+            onClick={() => setIsEyeControlActive(prev => !prev)}
+            aria-label="Toggle Full Website Eye Movement Control"
+            aria-pressed={isEyeControlActive}
+            title="Control entire website hands-free using eye movement & blinks"
+          >
+            <Eye size={17} color={isEyeControlActive ? '#16A34A' : 'currentColor'} aria-hidden="true" />
+            <span>{isEyeControlActive ? 'Eye Control: ON' : 'Eye Control'}</span>
+          </button>
+
           <button 
             className="btn btn-outline" 
             style={{ minHeight: '38px', padding: '0.35rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
@@ -164,6 +191,13 @@ export default function App() {
           setCurrentPage(page);
           setIsAIOpen(false);
         }} 
+      />
+
+      {/* Full-Website Eye Movement Controller */}
+      <EyeWebsiteController 
+        isActive={isEyeControlActive} 
+        onToggle={() => setIsEyeControlActive(prev => !prev)} 
+        onNavigate={setCurrentPage} 
       />
 
       {/* Footer */}
