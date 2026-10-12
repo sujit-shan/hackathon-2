@@ -376,3 +376,113 @@ async def signbridge_translate(payload: TranslateRequest):
         "tokens": clean_tokens,
         "provider": "grammatical_template"
     }
+
+
+class TextToSignRequest(BaseModel):
+    text: str
+    sign_language: Optional[str] = "ASL"
+
+
+SIGN_DICTIONARY = {
+    "HELLO": {"category": "Greeting", "meaning": "Friendly greeting / hello", "asl": True, "isl": True, "bsl": True},
+    "THANK YOU": {"category": "Courtesy", "meaning": "Expressing gratitude", "asl": True, "isl": True, "bsl": True},
+    "PLEASE": {"category": "Courtesy", "meaning": "Polite request", "asl": True, "isl": True, "bsl": True},
+    "HELP": {"category": "Assistance", "meaning": "Requesting help or support", "asl": True, "isl": True, "bsl": True},
+    "WATER": {"category": "Basic Needs", "meaning": "Drinking water", "asl": True, "isl": True, "bsl": True},
+    "FOOD": {"category": "Basic Needs", "meaning": "Food or eating", "asl": True, "isl": True, "bsl": True},
+    "YES": {"category": "Affirmation", "meaning": "Agreement / affirmation", "asl": True, "isl": True, "bsl": True},
+    "NO": {"category": "Negation", "meaning": "Disagreement / refusal", "asl": True, "isl": True, "bsl": True},
+    "I": {"category": "Pronoun", "meaning": "First-person pronoun (me/myself)", "asl": True, "isl": True, "bsl": True},
+    "YOU": {"category": "Pronoun", "meaning": "Second-person pronoun (you)", "asl": True, "isl": True, "bsl": True},
+    "EMERGENCY": {"category": "Urgent", "meaning": "Immediate urgent danger", "asl": True, "isl": True, "bsl": True},
+    "MEDICINE": {"category": "Medical", "meaning": "Prescription medication / pills", "asl": True, "isl": True, "bsl": True},
+    "PAIN": {"category": "Medical", "meaning": "Physical hurt or pain", "asl": True, "isl": True, "bsl": True},
+    "REST": {"category": "Wellness", "meaning": "Resting or sleeping", "asl": True, "isl": True, "bsl": True},
+    "FAMILY": {"category": "Social", "meaning": "Family members / relatives", "asl": True, "isl": True, "bsl": True},
+    "GOODBYE": {"category": "Greeting", "meaning": "Parting farewell", "asl": True, "isl": True, "bsl": True},
+    "LOVE": {"category": "Emotion", "meaning": "Love / affection", "asl": True, "isl": True, "bsl": True},
+    "WANT": {"category": "Desire", "meaning": "Desire or requirement", "asl": True, "isl": True, "bsl": True},
+    "WHERE": {"category": "Question", "meaning": "Locational inquiry", "asl": True, "isl": True, "bsl": True},
+    "WHAT": {"category": "Question", "meaning": "Subject inquiry", "asl": True, "isl": True, "bsl": True},
+    "HOW": {"category": "Question", "meaning": "Manner inquiry", "asl": True, "isl": True, "bsl": True},
+    "HAPPY": {"category": "Emotion", "meaning": "Joy or happiness", "asl": True, "isl": True, "bsl": True},
+    "GOOD": {"category": "Evaluation", "meaning": "Positive condition", "asl": True, "isl": True, "bsl": True}
+}
+
+
+@router.get("/dictionary")
+def get_sign_dictionary():
+    return {
+        "signs": SIGN_DICTIONARY,
+        "total_signs": len(SIGN_DICTIONARY),
+        "fingerspelling_supported": True,
+        "supported_languages": [
+            {"code": "ASL", "name": "American Sign Language", "flag": "🇺🇸"},
+            {"code": "ISL", "name": "Indian Sign Language", "flag": "🇮🇳"},
+            {"code": "BSL", "name": "British Sign Language", "flag": "🇬🇧"},
+            {"code": "IS", "name": "International Sign", "flag": "🌐"},
+            {"code": "DGS", "name": "German Sign Language", "flag": "🇩🇪"},
+            {"code": "LSF", "name": "French Sign Language", "flag": "🇫🇷"}
+        ]
+    }
+
+
+@router.post("/text-to-sign")
+async def text_to_sign(req: TextToSignRequest):
+    text = (req.text or "").strip()
+    if not text:
+        return {"spoken_text": "", "gloss_tokens": [], "tokens_meta": []}
+
+    sign_lang = req.sign_language or "ASL"
+    raw_upper = text.upper()
+    tokens = []
+
+    import re
+    cleaned = re.sub(r"[^\w\s]", " ", raw_upper)
+    words = cleaned.split()
+
+    i = 0
+    while i < len(words):
+        if i < len(words) - 1:
+            two_word = f"{words[i]} {words[i+1]}"
+            if two_word in SIGN_DICTIONARY:
+                tokens.append({
+                    "word": two_word,
+                    "gloss": two_word,
+                    "is_fingerspell": False,
+                    "duration_ms": 1300
+                })
+                i += 2
+                continue
+
+        curr_word = words[i]
+        if curr_word in ["A", "AN", "THE", "IS", "ARE", "AM"] and len(words) > 1:
+            i += 1
+            continue
+
+        if curr_word in SIGN_DICTIONARY:
+            tokens.append({
+                "word": curr_word,
+                "gloss": curr_word,
+                "is_fingerspell": False,
+                "duration_ms": 1200
+            })
+        else:
+            letters = list(curr_word)
+            tokens.append({
+                "word": curr_word,
+                "gloss": f"FS:{curr_word}",
+                "is_fingerspell": True,
+                "letters": letters,
+                "duration_ms": max(900, len(letters) * 350)
+            })
+        i += 1
+
+    return {
+        "spoken_text": text,
+        "sign_language": sign_lang,
+        "gloss_tokens": [t["gloss"] for t in tokens],
+        "tokens_meta": tokens,
+        "total_estimated_duration_ms": sum(t.get("duration_ms", 1000) for t in tokens)
+    }
+

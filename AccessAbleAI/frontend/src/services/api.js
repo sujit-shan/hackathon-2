@@ -138,6 +138,45 @@ export async function translateSignTokens(tokens) {
   return await res.json();
 }
 
+export async function translateTextToSign(text, signLanguage = 'ASL') {
+  try {
+    const res = await fetch(`${API_BASE}/signbridge/text-to-sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, sign_language: signLanguage })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    // Client-side fallback tokenization
+    const words = (text || '').trim().toUpperCase().replace(/[^A-Z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+    return {
+      spoken_text: text,
+      sign_language: signLanguage,
+      gloss_tokens: words,
+      tokens_meta: words.map(w => ({ word: w, gloss: w, is_fingerspell: false }))
+    };
+  }
+}
+
+export async function fetchSignDictionary() {
+  try {
+    const res = await fetch(`${API_BASE}/signbridge/dictionary`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return {
+      signs: {},
+      supported_languages: [
+        { code: 'ASL', name: 'American Sign Language', flag: '🇺🇸' },
+        { code: 'ISL', name: 'Indian Sign Language', flag: '🇮🇳' },
+        { code: 'BSL', name: 'British Sign Language', flag: '🇬🇧' },
+        { code: 'IS', name: 'International Sign', flag: '🌐' }
+      ]
+    };
+  }
+}
+
 export async function sendAIChat(messages, context = {}) {
   const res = await fetch(`${API_BASE}/ai/chat`, {
     method: 'POST',

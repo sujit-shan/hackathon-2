@@ -1,11 +1,52 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Camera, Play, Pause, Plus, RotateCcw, Volume2, Square, 
-  Copy, Check, AlertCircle, CheckCircle, RefreshCw, Sparkles, Cpu
+  Camera, 
+  Play, 
+  Pause, 
+  Plus, 
+  RotateCcw, 
+  Volume2, 
+  Square, 
+  Copy, 
+  Check, 
+  AlertCircle, 
+  CheckCircle, 
+  RefreshCw, 
+  Sparkles, 
+  ArrowLeftRight, 
+  Mic, 
+  MicOff, 
+  BookOpen, 
+  Layers, 
+  Activity, 
+  ExternalLink 
 } from 'lucide-react';
-import { checkSignBridgeStatus, predictSign, translateSignTokens } from '../services/api';
+import { 
+  checkSignBridgeStatus, 
+  predictSign, 
+  translateSignTokens, 
+  translateTextToSign, 
+  fetchSignDictionary 
+} from '../services/api';
+import SignLanguageAvatar from '../components/SignLanguageAvatar';
 
 export default function SignBridge() {
+  // Mode: 'spoken-to-signed' (Rylo text/voice to sign avatar) OR 'signed-to-spoken' (camera to speech)
+  const [translationMode, setTranslationMode] = useState('spoken-to-signed');
+
+  // Languages
+  const [spokenLang, setSpokenLang] = useState('en');
+  const [signLang, setSignLang] = useState('ASL');
+
+  // Spoken-to-Signed state
+  const [spokenInput, setSpokenInput] = useState('Hello, thank you for your help');
+  const [isTranslatingText, setIsTranslatingText] = useState(false);
+  const [glossTokens, setGlossTokens] = useState(['HELLO', 'THANK YOU', 'HELP']);
+  const [tokensMeta, setTokensMeta] = useState([]);
+  const [isListeningMic, setIsListeningMic] = useState(false);
+  const [micSupported, setMicSupported] = useState(false);
+
+  // Signed-to-Spoken camera state
   const [modelStatus, setModelStatus] = useState({ online: false, checking: true, qwenOnline: false });
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -15,18 +56,54 @@ export default function SignBridge() {
   const [isPredicting, setIsPredicting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Transcript states
+  // Transcript states (Signed-to-Spoken)
   const [transcriptWords, setTranscriptWords] = useState([]);
-  const [manualInput, setManualInput] = useState('');
   const [directWords, setDirectWords] = useState('');
   const [improvedMessage, setImprovedMessage] = useState('');
-  const [isTranslating, setIsTranslating] = useState(false);
+  const [isTranslatingSigned, setIsTranslatingSigned] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Dictionary drawer
+  const [showDictionary, setShowDictionary] = useState(false);
+  const [dictionaryData, setDictionaryData] = useState({});
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const intervalRef = useRef(null);
   const lastAddedRef = useRef({ word: '', time: 0 });
+  const recognitionRef = useRef(null);
+
+  // Check backend service & dictionary
+  useEffect(() => {
+    checkService();
+    loadDictionary();
+
+    // Setup speech recognition if available
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRec) {
+      setMicSupported(true);
+      const rec = new SpeechRec();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = 'en-US';
+      rec.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setSpokenInput(transcript);
+        handleTranslateText(transcript);
+        setIsListeningMic(false);
+      };
+      rec.onerror = () => setIsListeningMic(false);
+      rec.onend = () => setIsListeningMic(false);
+      recognitionRef.current = rec;
+    }
+
+    return () => {
+      stopCamera();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const checkService = async () => {
     setModelStatus({ online: false, checking: true, qwenOnline: false });
@@ -41,102 +118,63 @@ export default function SignBridge() {
     });
   };
 
-  useEffect(() => {
-    checkService();
-    return () => {
-      stopCamera();
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
-  // Fallback grammar synthesis (guarantees translation never fails)
-  const generateGrammarFallback = (words) => {
-    if (!words || words.length === 0) return '';
-    const u = words.map(w => w.toUpperCase());
-    if (u.includes("EMERGENCY") && u.includes("HELP")) {
-      return "Emergency, I need immediate help!";
-    }
-    if (u.includes("FOOD") && u.includes("HELP")) {
-      return "Please help me get some food.";
-    }
-    if (u.includes("FOOD")) {
-      return "I would like some food, please.";
-    }
-    if (u.includes("EMERGENCY")) {
-      return "Emergency assistance needed!";
-    }
-    if (u.includes("WATER") && (u.includes("WANT") || u.includes("I"))) {
-      return "I would like some water, please.";
-    }
-    if (u.includes("HELP") && u.includes("I")) {
-      return "Please help me.";
-    }
-    if (u.includes("HELP")) {
-      return "Please help me.";
-    }
-    if (u.includes("THANK YOU") && u.length === 1) {
-      return "Thank you very much.";
-    }
-    if (u.includes("HELLO") && u.length === 1) {
-      return "Hello! Nice to meet you.";
-    }
-    if (u.includes("GOODBYE")) {
-      return "Goodbye, have a great day!";
-    }
-    if (u.includes("YES") && u.includes("PLEASE")) {
-      return "Yes, please.";
-    }
-    if (u.includes("NO") && u.includes("THANK YOU")) {
-      return "No, thank you.";
-    }
-    const clean = words.map(w => w.toLowerCase()).join(', ');
-    return clean.charAt(0).toUpperCase() + clean.slice(1) + '.';
-  };
-
-  // Intelligent translation of confirmed tokens (FR-06)
-  const triggerQwenTranslation = async (words = transcriptWords) => {
-    if (!words || words.length === 0) {
-      setDirectWords('');
-      setImprovedMessage('');
-      return;
-    }
-    const cleanFormatted = words.map(w => w.toLowerCase()).join(', ');
-    setDirectWords(cleanFormatted);
-
-    setIsTranslating(true);
-    try {
-      const res = await translateSignTokens(words);
-      if (res && res.direct_words) {
-        setDirectWords(res.direct_words);
-      }
-      if (res && res.translated_sentence) {
-        setImprovedMessage(res.translated_sentence);
-      } else {
-        setImprovedMessage(generateGrammarFallback(words));
-      }
-    } catch (err) {
-      console.warn('[Translation Fallback]', err);
-      setImprovedMessage(generateGrammarFallback(words));
-    } finally {
-      setIsTranslating(false);
+  const loadDictionary = async () => {
+    const data = await fetchSignDictionary();
+    if (data.signs) {
+      setDictionaryData(data.signs);
     }
   };
 
-  // Auto-translate when transcript tokens update (debounced)
-  useEffect(() => {
-    if (transcriptWords.length > 0) {
-      const timer = setTimeout(() => {
-        triggerQwenTranslation(transcriptWords);
-      }, 350);
-      return () => clearTimeout(timer);
+  // Toggle Microphone
+  const toggleMic = () => {
+    if (!recognitionRef.current) return;
+    if (isListeningMic) {
+      recognitionRef.current.stop();
+      setIsListeningMic(false);
     } else {
-      setDirectWords('');
-      setImprovedMessage('');
+      try {
+        recognitionRef.current.start();
+        setIsListeningMic(true);
+      } catch {
+        setIsListeningMic(false);
+      }
     }
-  }, [transcriptWords]);
+  };
 
+  // Translate spoken text to sign language gloss sequence
+  const handleTranslateText = async (textToTranslate = spokenInput) => {
+    if (!textToTranslate.trim()) return;
+    setIsTranslatingText(true);
+    try {
+      const res = await translateTextToSign(textToTranslate, signLang);
+      if (res.gloss_tokens && res.gloss_tokens.length > 0) {
+        setGlossTokens(res.gloss_tokens);
+        setTokensMeta(res.tokens_meta || []);
+      } else {
+        const fallback = textToTranslate.trim().toUpperCase().split(/\s+/);
+        setGlossTokens(fallback);
+      }
+    } catch {
+      const fallback = textToTranslate.trim().toUpperCase().split(/\s+/);
+      setGlossTokens(fallback);
+    } finally {
+      setIsTranslatingText(false);
+    }
+  };
+
+  // Flip translation direction (⇄ Rylo swap)
+  const handleSwapDirection = () => {
+    if (translationMode === 'spoken-to-signed') {
+      setTranslationMode('signed-to-spoken');
+    } else {
+      setTranslationMode('spoken-to-signed');
+      stopCamera();
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Signed-to-Spoken Camera Logic
+  // -------------------------------------------------------------
   const startCamera = async () => {
     setCameraError('');
     setErrorMsg('');
@@ -147,31 +185,31 @@ export default function SignBridge() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setCameraActive(true);
-        // Automatically start recognition loop
         setIsRecognizing(true);
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = setInterval(captureAndPredictFrame, 500);
       }
-    } catch (err) {
-      setCameraError('Camera access denied or unavailable. You can use manual sign token entry below.');
+    } catch {
+      setCameraError('Camera access denied or unavailable. Please enable permissions.');
       setCameraActive(false);
     }
   };
 
   const stopCamera = () => {
-    stopRecognitionLoop();
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setIsRecognizing(false);
     if (videoRef.current?.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(t => t.stop());
+      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
   };
 
   const captureAndPredictFrame = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    if (isPredicting) return;
-
+    if (!videoRef.current || !canvasRef.current || isPredicting) return;
     const video = videoRef.current;
     if (video.readyState !== 4) return;
 
@@ -188,13 +226,9 @@ export default function SignBridge() {
       const data = await predictSign(base64Data);
       if (data.prediction) {
         setCurrentWord(data.prediction);
-        if (data.confidence !== undefined) {
-          setConfidence(data.confidence);
-        }
+        if (data.confidence !== undefined) setConfidence(data.confidence);
         setErrorMsg('');
 
-        // Auto-add word to sentence if confidence is solid (>=65%)
-        // Strictly add ONLY when a new different sign is formed (never repeat spam e.g. "YES, YES, YES")
         if (data.confidence >= 0.65) {
           if (lastAddedRef.current.word !== data.prediction) {
             handleAddWord(data.prediction);
@@ -208,29 +242,10 @@ export default function SignBridge() {
     }
   };
 
-  const startRecognitionLoop = () => {
-    if (!cameraActive) {
-      alert('Please start the webcam first.');
-      return;
-    }
-    setIsRecognizing(true);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(captureAndPredictFrame, 500);
-  };
-
-  const stopRecognitionLoop = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    setIsRecognizing(false);
-  };
-
   const handleAddWord = (word = currentWord) => {
     if (!word || !word.trim()) return;
     const cleaned = word.trim().toUpperCase();
     setTranscriptWords(prev => {
-      // Prevent consecutive duplicates
       if (prev.length > 0 && prev[prev.length - 1] === cleaned) return prev;
       return [...prev, cleaned];
     });
@@ -239,33 +254,46 @@ export default function SignBridge() {
     setConfidence(null);
   };
 
-  const handleUndoWord = () => {
-    setTranscriptWords(prev => prev.slice(0, -1));
-  };
-
+  const handleUndoWord = () => setTranscriptWords(prev => prev.slice(0, -1));
   const handleClearTranscript = () => {
     setTranscriptWords([]);
     setImprovedMessage('');
   };
 
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    if (!manualInput.trim()) return;
-    handleAddWord(manualInput);
-    setManualInput('');
+  // Synthesize transcript into fluent sentence
+  const triggerTranslation = async (words = transcriptWords) => {
+    if (!words || words.length === 0) {
+      setImprovedMessage('');
+      setDirectWords('');
+      return;
+    }
+    setIsTranslatingSigned(true);
+    try {
+      const res = await translateSignTokens(words);
+      setDirectWords(res.direct_words || words.join(', '));
+      setImprovedMessage(res.translated_sentence || res.direct_words);
+    } catch {
+      setImprovedMessage(words.join(' '));
+    } finally {
+      setIsTranslatingSigned(false);
+    }
   };
 
+  useEffect(() => {
+    if (transcriptWords.length > 0) {
+      triggerTranslation(transcriptWords);
+    } else {
+      setImprovedMessage('');
+      setDirectWords('');
+    }
+  }, [transcriptWords]);
+
   const speakMessage = (text) => {
-    if (!('speechSynthesis' in window)) return;
+    if (!('speechSynthesis' in window) || !text.trim()) return;
     window.speechSynthesis.cancel();
-    if (!text.trim()) return;
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 0.95;
     window.speechSynthesis.speak(u);
-  };
-
-  const stopSpeech = () => {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
   };
 
   const copyTranscript = async (text) => {
@@ -278,282 +306,587 @@ export default function SignBridge() {
   };
 
   return (
-    <div className="signbridge-page">
+    <div className="signbridge-page" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      {/* Header Banner */}
       <header className="page-header" style={{ marginBottom: '1.25rem' }}>
-        <h1 className="page-title">
-          <Camera className="text-primary" size={36} aria-hidden="true" />
-          SignBridge AI — Real-Time Sign Detection & Translation
-        </h1>
-        <p className="page-subtitle">
-          Real-time hand sign recognition and intelligent sentence synthesis for accessible, fluid communication.
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div>
+            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+              <span style={{ fontSize: '1.8rem' }}>🤟</span>
+              SignBridge Translator
+            </h1>
+            <p className="page-subtitle" style={{ margin: '0.25rem 0 0' }}>
+              Bidirectional sign language translation inspired by Rylo Translate (sign.mt) research.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              className="btn btn-outline"
+              onClick={() => setShowDictionary(!showDictionary)}
+              style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <BookOpen size={16} />
+              <span>{showDictionary ? 'Hide Sign Guide' : 'Sign Dictionary'}</span>
+            </button>
+
+            <a 
+              href="https://rylo.com/sign/translate/" 
+              target="_blank" 
+              rel="noreferrer"
+              className="btn btn-outline"
+              style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-muted)' }}
+              title="View original Rylo Translate / sign.mt research"
+            >
+              <span>Rylo Research</span>
+              <ExternalLink size={13} />
+            </a>
+          </div>
+        </div>
       </header>
 
-      {/* Eye Tracking Switch Banner */}
-      <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1.25rem', backgroundColor: 'rgba(79, 70, 229, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontSize: '1.5rem' }}>👁️</span>
-          <div>
-            <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>Prefer Hands-Free Eye Tracking & Blink Typing?</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Look at cards and blink to type words like <strong>"THANK YOU"</strong> without using your hands!</div>
-          </div>
-        </div>
-        <a 
-          href="#gazebridge"
-          className="btn btn-primary"
-          style={{ minHeight: '36px', padding: '0.3rem 0.85rem', fontSize: '0.85rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-          onClick={(e) => {
-            e.preventDefault();
-            // Click GazeBridge nav button
-            const navBtn = Array.from(document.querySelectorAll('.nav-item')).find(el => el.textContent.includes('GazeBridge'));
-            if (navBtn) navBtn.click();
+      {/* Main Rylo-Style Translation Card Container */}
+      <div 
+        className="translation-card"
+        style={{
+          backgroundColor: 'var(--bg-surface)',
+          borderRadius: '24px',
+          border: '1px solid var(--border-color)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          overflow: 'hidden',
+          marginBottom: '1.5rem'
+        }}
+      >
+        {/* Card Header: Language Selectors and Swap Button */}
+        <div 
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid var(--border-color)',
+            padding: '0.85rem 1.5rem',
+            backgroundColor: 'var(--bg-surface-hover)',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
           }}
         >
-          Open GazeBridge AI (Eye Typing) ➡️
-        </a>
-      </div>
+          {/* Left Language Box */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              {translationMode === 'spoken-to-signed' ? 'Spoken Language:' : 'Sign Language:'}
+            </span>
 
-      {/* Target Vocabulary Chips & Gesture Cheatsheet */}
-      <div style={{ marginBottom: '1.5rem', padding: '1rem 1.25rem', backgroundColor: 'var(--bg-surface-hover)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Supported Gesture Guide & Quick Add:
-          </div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600 }}>
-            Click any chip to add or perform the hand posture for the camera
-          </span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.65rem' }}>
-          {[
-            { sign: "FOOD", posture: "🍲 Flat-O (Fingertips touching thumb)" },
-            { sign: "EMERGENCY", posture: "🚨 Thumb & Pinky Up (Call / Alert)" },
-            { sign: "THANK YOU", posture: "🙏 Flat Hand (fingers together)" },
-            { sign: "HELP", posture: "🆘 Thumbs Up over flat palm" },
-            { sign: "WATER", posture: "💧 'W' Sign (Index, Middle, Ring UP)" },
-            { sign: "HELLO", posture: "🖐️ Open Palm (all 5 fingers up)" },
-            { sign: "YES", posture: "👍 Thumbs Up or ✊ Fist" },
-            { sign: "NO", posture: "🤏 3-Finger Pinch or 👎 Thumb Down" },
-            { sign: "I", posture: "☝️ Point Up or 🤙 Pinky Up" },
-            { sign: "PLEASE", posture: "✨ Flat Hand on chest" },
-            { sign: "GOODBYE", posture: "👋 Wave open palm" },
-          ].map((item) => (
-            <button
-              key={item.sign}
-              onClick={() => handleAddWord(item.sign)}
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '8px',
-                padding: '0.5rem 0.75rem',
-                fontSize: '0.85rem',
-                textAlign: 'left',
-                cursor: 'pointer',
-                color: 'var(--text-main)',
-                transition: 'all 0.15s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.2rem'
-              }}
-              title={`Click to add ${item.sign} or make this posture`}
-            >
-              <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.9rem' }}>+ {item.sign}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.posture}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
-        
-        {/* Left Card: Camera & Recognition */}
-        <div className="card">
-          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Camera size={22} className="text-primary" /> 1. Webcam Sign Capture
-          </h2>
-
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-            {!cameraActive ? (
-              <button className="btn btn-primary" onClick={startCamera}>
-                <Camera size={18} aria-hidden="true" /> Start Camera
-              </button>
+            {translationMode === 'spoken-to-signed' ? (
+              <select
+                value={spokenLang}
+                onChange={(e) => setSpokenLang(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-color)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '0.35rem 0.75rem',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="en">🇺🇸 English</option>
+                <option value="es">🇪🇸 Spanish</option>
+                <option value="hi">🇮🇳 Hindi</option>
+                <option value="fr">🇫🇷 French</option>
+                <option value="de">🇩🇪 German</option>
+              </select>
             ) : (
-              <button className="btn btn-outline" onClick={stopCamera}>
-                <Square size={18} aria-hidden="true" /> Stop Camera
-              </button>
-            )}
-
-            {cameraActive && (
-              !isRecognizing ? (
-                <button className="btn btn-primary" onClick={startRecognitionLoop}>
-                  <Play size={18} aria-hidden="true" /> Start Real-Time Tracking
-                </button>
-              ) : (
-                <button className="btn btn-danger" onClick={stopRecognitionLoop}>
-                  <Pause size={18} aria-hidden="true" /> Pause Tracking
-                </button>
-              )
-            )}
-
-            {cameraActive && !isRecognizing && (
-              <button className="btn btn-outline" onClick={captureAndPredictFrame} disabled={isPredicting}>
-                Recognize Single Frame
-              </button>
+              <select
+                value={signLang}
+                onChange={(e) => setSignLang(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-color)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '0.35rem 0.75rem',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ASL">🇺🇸 American Sign Language (ASL)</option>
+                <option value="ISL">🇮🇳 Indian Sign Language (ISL)</option>
+                <option value="BSL">🇬🇧 British Sign Language (BSL)</option>
+                <option value="IS">🌐 International Sign (IS)</option>
+              </select>
             )}
           </div>
 
-          {cameraError && (
-            <div style={{ color: 'var(--danger)', marginBottom: '1rem', fontWeight: 600 }}>{cameraError}</div>
-          )}
+          {/* Central Swap Direction Button */}
+          <button
+            className="btn btn-outline"
+            onClick={handleSwapDirection}
+            style={{
+              borderRadius: '9999px',
+              padding: '0.45rem 1.1rem',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              backgroundColor: 'var(--bg-surface)',
+              border: '2px solid var(--primary)',
+              color: 'var(--primary)',
+              boxShadow: '0 2px 10px rgba(79, 70, 229, 0.15)'
+            }}
+            title="Swap translation direction (Spoken to Signed ⇄ Signed to Spoken)"
+          >
+            <ArrowLeftRight size={16} />
+            <span>{translationMode === 'spoken-to-signed' ? 'Spoken ➔ Sign Avatar' : 'Webcam Sign ➔ Speech'}</span>
+          </button>
 
-          {/* Video Preview */}
-          <div style={{ position: 'relative', backgroundColor: '#000', borderRadius: 'var(--radius-md)', overflow: 'hidden', minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              muted 
-              style={{ width: '100%', maxWidth: '440px', display: cameraActive ? 'block' : 'none' }} 
-            />
+          {/* Right Language Box */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              {translationMode === 'spoken-to-signed' ? 'Sign Language Output:' : 'Spoken Speech Output:'}
+            </span>
 
-            {!cameraActive && (
-              <p style={{ color: '#9CA3AF' }}>Camera is inactive. Click "Start Camera" to begin.</p>
+            {translationMode === 'spoken-to-signed' ? (
+              <select
+                value={signLang}
+                onChange={(e) => setSignLang(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-color)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '0.35rem 0.75rem',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ASL">🇺🇸 American Sign Language (ASL)</option>
+                <option value="ISL">🇮🇳 Indian Sign Language (ISL)</option>
+                <option value="BSL">🇬🇧 British Sign Language (BSL)</option>
+                <option value="IS">🌐 International Sign (IS)</option>
+              </select>
+            ) : (
+              <select
+                value={spokenLang}
+                onChange={(e) => setSpokenLang(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-color)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '0.35rem 0.75rem',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="en">🇺🇸 English</option>
+                <option value="es">🇪🇸 Spanish</option>
+                <option value="hi">🇮🇳 Hindi</option>
+              </select>
             )}
           </div>
-
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-          {/* Prediction Output & Confirmation Card */}
-          <div style={{ marginTop: '1.25rem', padding: '1.25rem', backgroundColor: 'var(--bg-surface-hover)', borderRadius: 'var(--radius-md)', border: '2px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Latest Detected Sign:</span>
-              {isPredicting && <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 700 }}>Inferencing (&lt;5ms)...</span>}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem' }}>
-              <span style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--primary)' }}>
-                {currentWord ? currentWord : <span style={{ color: 'var(--text-muted)', fontSize: '1.2rem' }}>[No sign detected]</span>}
-              </span>
-              {confidence !== null && (
-                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: confidence >= 0.75 ? '#16A34A' : '#CA8A04' }}>
-                  ({Math.round(confidence * 100)}% Confidence)
-                </span>
-              )}
-            </div>
-
-            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem' }}>
-              <button className="btn btn-primary" onClick={() => handleAddWord(currentWord)} disabled={!currentWord}>
-                <Plus size={18} aria-hidden="true" /> Add Sign to Sentence
-              </button>
-              <button className="btn btn-outline" onClick={() => { setCurrentWord(''); setConfidence(null); }} disabled={!currentWord}>
-                Dismiss
-              </button>
-            </div>
-          </div>
-
-          {errorMsg && (
-            <div style={{ color: 'var(--danger)', marginTop: '0.75rem', fontSize: '0.9rem' }}>{errorMsg}</div>
-          )}
         </div>
 
-        {/* Right Card: Staged Transcript & Clean Word Output */}
-        <div className="card">
-          <h2 style={{ fontSize: '1.3rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Sparkles size={22} className="text-primary" /> 2. Communicated Output & Speech
-          </h2>
+        {/* ========================================================= */}
+        {/* MODE 1: Spoken to Signed (Rylo Text/Voice -> Avatar)       */}
+        {/* ========================================================= */}
+        {translationMode === 'spoken-to-signed' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', minHeight: '440px' }}>
+            {/* Left Pane: Spoken Language Input */}
+            <div style={{ padding: '1.5rem', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                  Enter Spoken Words or Speak:
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {spokenInput.length} chars
+                </span>
+              </div>
 
-          {/* Manual Input Fallback */}
-          <form onSubmit={handleManualSubmit} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
-            <input 
-              type="text" 
-              value={manualInput} 
-              onChange={(e) => setManualInput(e.target.value)} 
-              placeholder="Add sign token (e.g. FOOD, EMERGENCY, HELP, WATER)..." 
-            />
-            <button type="submit" className="btn btn-outline" style={{ minWidth: '80px' }}>
-              Add
-            </button>
-          </form>
+              {/* Text Input Area */}
+              <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <textarea
+                  value={spokenInput}
+                  onChange={(e) => {
+                    setSpokenInput(e.target.value);
+                    handleTranslateText(e.target.value);
+                  }}
+                  placeholder="Type anything (e.g., 'Hello, thank you for your help', 'I need water please')..."
+                  style={{
+                    width: '100%',
+                    flex: 1,
+                    minHeight: '160px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    resize: 'none',
+                    outline: 'none',
+                    fontSize: '1.25rem',
+                    lineHeight: '1.6',
+                    color: 'var(--text-color)',
+                    fontFamily: 'inherit'
+                  }}
+                />
 
-          {/* Staged Words List */}
-          <div style={{ marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Captured Sign Sequence ({transcriptWords.length}):
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn btn-outline" style={{ minHeight: '32px', padding: '0.2rem 0.6rem', fontSize: '0.8rem' }} onClick={handleUndoWord} disabled={transcriptWords.length === 0}>
-                  <RotateCcw size={12} aria-hidden="true" /> Undo Last
-                </button>
-                <button className="btn btn-outline" style={{ minHeight: '32px', padding: '0.2rem 0.6rem', fontSize: '0.8rem' }} onClick={handleClearTranscript} disabled={transcriptWords.length === 0}>
-                  Clear All
-                </button>
+                {/* Microphone & Clear Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {micSupported && (
+                      <button
+                        className={`btn ${isListeningMic ? 'btn-danger' : 'btn-outline'}`}
+                        onClick={toggleMic}
+                        style={{
+                          borderRadius: '9999px',
+                          padding: '0.4rem 0.85rem',
+                          fontSize: '0.85rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem'
+                        }}
+                        title={isListeningMic ? 'Listening... click to stop' : 'Click to speak using microphone'}
+                      >
+                        {isListeningMic ? <MicOff size={16} /> : <Mic size={16} />}
+                        <span>{isListeningMic ? 'Listening...' : 'Voice Input'}</span>
+                      </button>
+                    )}
+
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => speakMessage(spokenInput)}
+                      style={{ borderRadius: '9999px', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                      title="Hear spoken text aloud"
+                    >
+                      <Volume2 size={16} />
+                    </button>
+                  </div>
+
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setSpokenInput('');
+                      setGlossTokens([]);
+                    }}
+                    style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Sample Phrases */}
+              <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                  Quick Suggested Phrases:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  {[
+                    "Hello, nice to meet you",
+                    "Thank you for your help",
+                    "Please assist me",
+                    "I would like some water",
+                    "Emergency assistance needed",
+                    "I love you",
+                    "Goodbye, have a nice day"
+                  ].map(phrase => (
+                    <button
+                      key={phrase}
+                      onClick={() => {
+                        setSpokenInput(phrase);
+                        handleTranslateText(phrase);
+                      }}
+                      style={{
+                        backgroundColor: 'var(--bg-surface-hover)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '9999px',
+                        padding: '0.3rem 0.75rem',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        color: 'var(--text-color)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {phrase}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div style={{ minHeight: '52px', padding: '0.75rem', backgroundColor: 'var(--bg-surface-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-              {transcriptWords.length === 0 ? (
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Recognized signs appear here in sequence.</span>
-              ) : (
-                transcriptWords.map((w, idx) => (
-                  <span key={idx} style={{ backgroundColor: 'var(--primary)', color: '#FFFFFF', padding: '0.3rem 0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.9rem', fontWeight: 700 }}>
-                    {w}
+            {/* Right Pane: Sign Language Animated Avatar & Pose Output */}
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-surface)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Sparkles size={16} className="text-primary" />
+                  <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                    {signLang} Sign Language Avatar
                   </span>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Communicated Message Output (Clean Words, No Stuttering) */}
-          <div style={{ 
-            padding: '1.25rem', 
-            backgroundColor: 'var(--bg-surface-hover)', 
-            borderRadius: 'var(--radius-md)', 
-            border: '2px solid var(--primary)',
-            marginBottom: '1.25rem'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <Sparkles size={14} /> Communicated Message (Clean Words):
-              </div>
-              <span style={{ fontSize: '0.75rem', color: '#16A34A', fontWeight: 700 }}>
-                ✓ Clean &amp; Deduplicated
-              </span>
-            </div>
-
-            {/* Direct comma-separated keywords: e.g. "food, emergency, thank you, help" */}
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--primary)', minHeight: '40px', letterSpacing: '0.01em' }}>
-              {directWords ? (
-                directWords
-              ) : (
-                <span style={{ color: 'var(--text-muted)', fontSize: '1rem', fontWeight: 500 }}>
-                  Signs translate to clean words (e.g. food, emergency, thank you, help)...
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {glossTokens.length} Sign Tokens
                 </span>
-              )}
+              </div>
+
+              {/* Real-time 60 FPS Canvas Avatar Player */}
+              <SignLanguageAvatar
+                tokens={glossTokens}
+                signLanguage={signLang}
+              />
+            </div>
+          </div>
+        ) : (
+          /* ========================================================= */
+          /* MODE 2: Signed to Spoken (Webcam Sign Recognition)        */
+          /* ========================================================= */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', minHeight: '440px' }}>
+            {/* Left Pane: Camera Capture */}
+            <div style={{ padding: '1.5rem', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                  Webcam Sign Language Detection:
+                </span>
+                <span style={{ fontSize: '0.75rem', color: modelStatus.online ? '#16A34A' : 'var(--text-muted)', fontWeight: 700 }}>
+                  ● {modelStatus.online ? 'Model Ready' : 'Initializing'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                {!cameraActive ? (
+                  <button className="btn btn-primary" onClick={startCamera}>
+                    <Camera size={16} /> Start Webcam
+                  </button>
+                ) : (
+                  <button className="btn btn-outline" onClick={stopCamera}>
+                    <Square size={16} /> Stop Webcam
+                  </button>
+                )}
+              </div>
+
+              {/* Video & Hidden Canvas */}
+              <div 
+                style={{ 
+                  position: 'relative', 
+                  width: '100%', 
+                  aspectRatio: '4/3', 
+                  borderRadius: '16px', 
+                  overflow: 'hidden', 
+                  backgroundColor: '#0F172A',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '1px solid var(--border-color)'
+                }}
+              >
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} 
+                />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+                {!cameraActive && (
+                  <div style={{ position: 'absolute', textAlign: 'center', color: '#94A3B8', padding: '1rem' }}>
+                    <Camera size={44} style={{ opacity: 0.4, margin: '0 auto 0.5rem' }} />
+                    <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600 }}>Click 'Start Webcam' to recognize sign gestures</p>
+                  </div>
+                )}
+
+                {/* Live Prediction Overlay */}
+                {cameraActive && currentWord && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      bottom: '12px',
+                      left: '12px',
+                      backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                      border: '1.5px solid #16A34A',
+                      borderRadius: '8px',
+                      padding: '0.4rem 0.85rem',
+                      color: '#FFF',
+                      fontSize: '0.9rem',
+                      fontWeight: 800,
+                      backdropFilter: 'blur(8px)'
+                    }}
+                  >
+                    Detected: <span style={{ color: '#16A34A' }}>{currentWord}</span> {confidence && `(${(confidence * 100).toFixed(0)}%)`}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Sign Token Chips */}
+              <div style={{ marginTop: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                  Quick Add Gestures:
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.35rem' }}>
+                  {["HELLO", "THANK YOU", "HELP", "WATER", "FOOD", "YES", "NO", "PLEASE", "EMERGENCY"].map(w => (
+                    <button
+                      key={w}
+                      onClick={() => handleAddWord(w)}
+                      style={{
+                        padding: '0.25rem 0.55rem',
+                        fontSize: '0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-surface)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      + {w}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Optional Fluent Sentence */}
-            {improvedMessage && improvedMessage.toLowerCase() !== directWords.toLowerCase() && (
-              <div style={{ marginTop: '0.65rem', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', fontSize: '0.95rem', color: 'var(--text-muted)' }}>
-                <span style={{ fontWeight: 600 }}>Fluent Synthesis:</span> "{improvedMessage}"
+            {/* Right Pane: Speech Synthesis Output */}
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                  Synthesized Spoken Sentence:
+                </span>
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => speakMessage(improvedMessage || directWords)}
+                    disabled={!improvedMessage && !directWords}
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                  >
+                    <Volume2 size={15} /> Listen
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => copyTranscript(improvedMessage || directWords)}
+                    disabled={!improvedMessage && !directWords}
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                  >
+                    {copied ? <Check size={15} color="#16A34A" /> : <Copy size={15} />}
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Speech Synthesis & Copy Controls */}
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={() => speakMessage(directWords || improvedMessage || transcriptWords.map(w => w.toLowerCase()).join(', '))} disabled={!directWords && transcriptWords.length === 0} style={{ flex: 1, minHeight: '44px' }}>
-              <Volume2 size={18} aria-hidden="true" /> Read Aloud (Speak)
-            </button>
-            <button className="btn btn-outline" onClick={stopSpeech}>
-              <Square size={18} aria-hidden="true" /> Stop
-            </button>
-            <button className="btn btn-outline" onClick={() => copyTranscript(directWords || improvedMessage || transcriptWords.map(w => w.toLowerCase()).join(', '))} disabled={!directWords && transcriptWords.length === 0}>
-              {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />} {copied ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-        </div>
+              {/* Main Sentence Output Box */}
+              <div 
+                style={{
+                  flex: 1,
+                  minHeight: '140px',
+                  backgroundColor: 'var(--bg-surface-hover)',
+                  borderRadius: '16px',
+                  border: '1px solid var(--border-color)',
+                  padding: '1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontSize: '1.35rem',
+                  fontWeight: 700,
+                  color: (improvedMessage || directWords) ? 'var(--text-main)' : 'var(--text-muted)',
+                  lineHeight: '1.6'
+                }}
+              >
+                {(improvedMessage || directWords) || "Form sign gestures with your webcam to generate spoken sentences..."}
+              </div>
 
+              {/* Token Queue */}
+              <div style={{ marginTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                    Recognized Sign Sequence:
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button onClick={handleUndoWord} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem' }}>Undo</button>
+                    <button onClick={handleClearTranscript} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem' }}>Clear</button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', minHeight: '36px' }}>
+                  {transcriptWords.length === 0 ? (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No signs added yet.</span>
+                  ) : (
+                    transcriptWords.map((w, idx) => (
+                      <span
+                        key={idx}
+                        style={{
+                          backgroundColor: 'rgba(79, 70, 229, 0.12)',
+                          color: 'var(--primary)',
+                          border: '1px solid var(--primary)',
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700
+                        }}
+                      >
+                        {w}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Expandable Sign Dictionary Cheatsheet Drawer */}
+      {showDictionary && (
+        <section 
+          style={{
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: '20px',
+            border: '1px solid var(--border-color)',
+            padding: '1.5rem',
+            marginBottom: '1.5rem',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.08)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <BookOpen size={18} className="text-primary" />
+              Sign Language Dictionary & Pose Glossary
+            </h2>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Click any sign to preview on the avatar
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
+            {Object.entries(dictionaryData).map(([sign, info]) => (
+              <button
+                key={sign}
+                onClick={() => {
+                  setSpokenInput(sign);
+                  setGlossTokens([sign]);
+                  setTranslationMode('spoken-to-signed');
+                  window.scrollTo({ top: 100, behavior: 'smooth' });
+                }}
+                style={{
+                  backgroundColor: 'var(--bg-surface-hover)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '0.75rem 1rem',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '0.95rem' }}>{sign}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', backgroundColor: 'var(--bg-surface)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                    {info.category || 'General'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{info.meaning || 'Sign gesture'}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
